@@ -5,23 +5,27 @@ namespace App\Http\Controllers;
 use App\Models\Note;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
 
 class NoteController extends Controller
 {
-    // 1. LISTAR apenas as notas do usuário logado
-    public function index()
+    public function index(Request $request)
     {
-        $notes = Auth::user()->notes()->latest()->get();
+        $query = Note::where('user_id', Auth::id());
+
+        // Requisito: Filtro/Busca por título
+        if ($request->filled('search')) {
+            $query->where('title', 'like', '%' . $request->search . '%');
+        }
+
+        // Requisito: Paginação
+        $notes = $query->latest()->paginate(6);
+
         return view('notes.index', compact('notes'));
     }
 
-    // 2. MOSTRAR a tela de criação
-    public function create()
-    {
-        return view('notes.create');
-    }
+    public function create() { return view('notes.create'); }
 
-    // 3. SALVAR a nota no banco de dados
     public function store(Request $request)
     {
         $request->validate([
@@ -29,52 +33,51 @@ class NoteController extends Controller
             'content' => 'required',
         ]);
 
-        // Cria a nota vinculada diretamente ao usuário logado
-        Auth::user()->notes()->create([
-            'title' => $request->title,
-            'content' => $request->content, // O Laravel criptografa automaticamente aqui!
-        ]);
-
+        Auth::user()->notes()->create($request->all());
         return redirect()->route('notes.index')->with('success', 'Nota criada com sucesso!');
     }
 
-    // 4. MOSTRAR a tela de edição (com trava de segurança)
     public function edit(Note $note)
     {
-        // Trava de Segurança: Se a nota não for do usuário logado, barra o acesso (Erro 403)
-        if ($note->user_id !== Auth::id()) {
-            abort(403, 'Acesso não autorizado.');
-        }
-
+        Gate::authorize('update', $note); // Requisito: Policy
         return view('notes.edit', compact('note'));
     }
 
-    // 5. ATUALIZAR a nota no banco de dados
     public function update(Request $request, Note $note)
     {
-        if ($note->user_id !== Auth::id()) {
-            abort(403, 'Acesso não autorizado.');
-        }
-
-        $request->validate([
-            'title' => 'required|max:255',
-            'content' => 'required',
-        ]);
-
-        $note->update($request->only(['title', 'content']));
-
-        return redirect()->route('notes.index')->with('success', 'Nota atualizada com sucesso!');
+        Gate::authorize('update', $note);
+        $request->validate(['title' => 'required|max:255', 'content' => 'required']);
+        $note->update($request->all());
+        return redirect()->route('notes.index')->with('success', 'Nota atualizada!');
     }
 
-    // 6. EXCLUIR a nota (Soft Delete)
     public function destroy(Note $note)
     {
-        if ($note->user_id !== Auth::id()) {
-            abort(403, 'Acesso não autorizado.');
-        }
+        Gate::authorize('delete', $note);
+        $note->delete(); // Soft Delete automático
+        return redirect()->route('notes.index')->with('success', 'Nota enviada para a lixeira!');
+    }
 
-        $note->delete(); // Guarda a data/hora da exclusão no campo deleted_at automaticamente
+    // Requisito: Página de Lixeira
+    public function trash()
+    {
+        $notes = Note::onlyTrashed()->where('user_id', Auth::id())->latest()->get();
+        return view('notes.trash', compact('notes'));
+    }
 
-        return redirect()->route('notes.index')->with('success', 'Nota excluída com sucesso!');
+    public function restore($id)
+    {
+        $note = Note::onlyTrashed()->findOrFail($id);
+        Gate::authorize('restore', $note);
+        $note->restore();
+        return redirect()->route('notes.index')->with('success', 'Nota restaurada com sucesso!');
+    }
+
+    public function forceDelete($id)
+    {
+        $note = Note::onlyTrashed()->findOrFail($id);
+        Gate::authorize('forceDelete', $note);
+        $note->forceDelete(); // Deleta definitivo do banco
+        return redirect()->route('notes.trash')->with('success', 'Nota excluída permanentemente!');
     }
 }
