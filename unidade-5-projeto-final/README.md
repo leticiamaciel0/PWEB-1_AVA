@@ -47,7 +47,7 @@ Bash
 ./vendor/bin/sail artisan migrate --seed
 A aplicação estará acessível em seu navegador no endereço: http://localhost.
 
-🧪 Como Rodar os Testes Automatizados
+ Como Rodar os Testes Automatizados
 O sistema conta com suítes de testes automatizados para garantir a estabilidade das regras de negócio e endpoints. Para rodá-los dentro do container, execute:
 
 Bash
